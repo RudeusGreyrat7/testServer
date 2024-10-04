@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  # Our Postgres database
+  db: # The service will be named db. 
+    image: postgres # The postgres image will be used
+    restart: always # Always try to restart if this stops running
+    environment: # Provide environment variables
+      POSTGRES_USER: ${PSQL_USER} # POSTGRES_USER env var w/ value baloo
+      POSTGRES_PASSWORD: ${PSQL_PASSWORD}
+      POSTGRES_DB: ${PSQL_DATABASE} # Database name
+

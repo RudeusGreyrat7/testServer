@@ -1,0 +1,42 @@
+matvejkuznecenkov@Air-Matvej migrations % goose create users sql
+2024/09/23 13:26:18 Created new file: 20240923102618_users.sql
+matvejkuznecenkov@Air-Matvej migrations % goose create sessions sql
+2024/09/23 13:28:49 Created new file: 20240923102849_sessions.sql
+matvejkuznecenkov@Air-Matvej migrations % docker compose down 
+WARN[0000] /Users/matvejkuznecenkov/go/src/github.com/LENSLOCKED/docker-compose.yml: `version` is obsolete 
+[+] Running 3/3
+ ✔ Container lenslocked-adminer-1  Removed                                                 0.2s 
+ ✔ Container lenslocked-db-1       Removed                                                 0.2s 
+ ✔ Network lenslocked_default      Removed                                                 0.1s 
+matvejkuznecenkov@Air-Matvej migrations % docker compose up -d
+WARN[0000] /Users/matvejkuznecenkov/go/src/github.com/LENSLOCKED/docker-compose.yml: `version` is obsolete 
+[+] Running 3/3
+ ✔ Network lenslocked_default      Created                                                 0.0s 
+ ✔ Container lenslocked-db-1       Started                                                 0.3s 
+ ✔ Container lenslocked-adminer-1  Started                                                 0.3s 
+matvejkuznecenkov@Air-Matvej migrations % goose postgres "host=localhost port=5434 user=mat password=junglebook dbname=lenslocked sslmode=disable" status
+2024/09/23 13:31:42     Applied At                  Migration
+2024/09/23 13:31:42     =======================================
+2024/09/23 13:31:42     Pending                  -- 20240923102618_users.sql
+2024/09/23 13:31:42     Pending                  -- 20240923102849_sessions.sql
+matvejkuznecenkov@Air-Matvej migrations % goose postgres "host=localhost port=5434 user=mat password=junglebook dbname=lenslocked sslmode=disable" up    
+2024/09/23 13:31:49 OK   20240923102618_users.sql (9.34ms)
+2024/09/23 13:31:49 OK   20240923102849_sessions.sql (1.59ms)
+2024/09/23 13:31:49 goose: successfully migrated database to version: 20240923102849
+matvejkuznecenkov@Air-Matvej migrations % goose fix
+2024/09/23 15:13:56 RENAMED 20240923102618_users.sql => 00001_users.sql
+2024/09/23 15:13:56 RENAMED 20240923102849_sessions.sql => 00002_sessions.sql
+matvejkuznecenkov@Air-Matvej migrations % goose postgres "host=localhost port=5434 user=mat password=junglebook dbname=lenslocked sslmode=disable" status
+2024/09/23 15:14:35     Applied At                  Migration
+2024/09/23 15:14:35     =======================================
+2024/09/23 15:14:35     Pending                  -- 00001_users.sql
+2024/09/23 15:14:35     Pending                  -- 00002_sessions.sql
+
+goose create widgets sql
+
+goose postgres "host=localhost port=5434 user=mat password=junglebook dbname=lenslocked sslmode=disable" status
+goose postgres "host=localhost port=5434 user=mat password=junglebook dbname=lenslocked sslmode=disable" up
+goose postgres "host=localhost port=5434 user=mat password=junglebook dbname=lenslocked sslmode=disable" down
+
+
+goose create widgets go 

@@ -1,0 +1,187 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+
+	"github.com/LENSLOCKED/controllers"
+	"github.com/LENSLOCKED/migrations"
+	"github.com/LENSLOCKED/models"
+	"github.com/LENSLOCKED/templates"
+	"github.com/LENSLOCKED/views"
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
+	"github.com/joho/godotenv"
+)
+
+// * чтобы посмотреть как устроены встроенные возможности нужно зажать command
+// и щелкнуть по слову мышкой
+
+type config struct {
+	PSQL models.PostgresConfig
+	SMTP models.SMTPConfig
+	CSRF struct {
+		Key    string
+		Secure bool
+	}
+	Server struct {
+		Address string // http://localhost:8080/
+	}
+}
+
+func loadEnvConfig() (config, error) {
+	var cfg config
+	err := godotenv.Load()
+	if err != nil {
+		return cfg, err
+	}
+
+	cfg.PSQL = models.DefaultPostgresConfig()
+
+	cfg.SMTP.Host = os.Getenv("SMTP_HOST")
+	portStr := os.Getenv("SMTP_PORT")
+	cfg.SMTP.Port, err = strconv.Atoi(portStr)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.SMTP.Username = os.Getenv("SMTP_USERNAME")
+	cfg.SMTP.Password = os.Getenv("SMTP_PASSWORD")
+
+	cfg.CSRF.Key = "nav02buvw29fnnslnla2bjf"
+	cfg.CSRF.Secure = false
+
+	cfg.Server.Address = ":8080"
+
+	return cfg, nil
+}
+
+func main() {
+	cfg, err := loadEnvConfig()
+	if err != nil {
+		panic(err)
+	}
+	// Setup the database
+	db, err := models.Open(cfg.PSQL)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	err = models.MigrateFS(db, migrations.FS, ".")
+	if err != nil {
+		panic(err)
+	}
+
+	// Setup services
+	userService := &models.UserService{
+		DB: db,
+	}
+	SessionService := &models.SessionService{
+		DB: db,
+	}
+	pwReserService := &models.PasswordResetService{
+		DB: db,
+	}
+	emailService := models.NewEmailService(cfg.SMTP)
+
+	galleryService := &models.GalleryService{
+		DB: db,
+	}
+
+	// Setup middleware
+	umw := controllers.UserMiddleware{
+		SessionService: SessionService,
+	}
+	// шифруем все cookie с помощью github.com/gorilla/csrf
+	// устанавливаем ключ
+	// csrfKey := "nav02buvw29fnnslnla2bjf"
+	// сохраняем в переменную Middleware, который будет обрабатывать наши cookie
+	// и добавляем параметр csrf.Secure(false)
+	csrfMw := csrf.Protect([]byte(cfg.CSRF.Key), csrf.Secure(cfg.CSRF.Secure),
+		csrf.Path("/"))
+
+	// Setup controllers
+	usersC := controllers.Users{
+		UserService:          userService,
+		SessionService:       SessionService,
+		PasswordResetService: pwReserService,
+		EmailService:         emailService,
+	}
+
+	usersC.Templates.New = views.Must(views.ParseFS(templates.FS, "signup.gohtml", "tailwind.gohtml"))
+	usersC.Templates.SignIn = views.Must(views.ParseFS(templates.FS, "signin.gohtml", "tailwind.gohtml"))
+	usersC.Templates.ForgotPassword = views.Must(views.ParseFS(templates.FS, "forgot-pw.gohtml", "tailwind.gohtml"))
+	usersC.Templates.CheckYourEmail = views.Must(views.ParseFS(templates.FS, "check-your-email.gohtml", "tailwind.gohtml"))
+	usersC.Templates.ResetPassword = views.Must(views.ParseFS(templates.FS, "reset-pw.gohtml", "tailwind.gohtml"))
+
+	galleriesC := controllers.Galleries{
+		GalleryService: galleryService,
+	}
+	galleriesC.Templates.New = views.Must(views.ParseFS(templates.FS, "galleries/new.gohtml", "tailwind.gohtml"))
+	galleriesC.Templates.Edit = views.Must(views.ParseFS(templates.FS, "galleries/edit.gohtml", "tailwind.gohtml"))
+	galleriesC.Templates.Index = views.Must(views.ParseFS(templates.FS, "galleries/index.gohtml", "tailwind.gohtml"))
+	galleriesC.Templates.Show = views.Must(views.ParseFS(templates.FS, "galleries/show.gohtml", "tailwind.gohtml"))
+	// Setup our router and routes
+	router := chi.NewRouter()
+	router.Use(csrfMw)
+	router.Use(umw.SetUser)
+	router.Get("/", controllers.StaticHandler(
+		views.Must(views.ParseFS(templates.FS, "home.gohtml", "tailwind.gohtml"))))
+	router.Get("/contact", controllers.StaticHandler(
+		views.Must(views.ParseFS(templates.FS, "contact.gohtml", "tailwind.gohtml"))))
+	router.Get("/faq", controllers.FAQ(
+		views.Must(views.ParseFS(templates.FS, "faq.gohtml", "tailwind.gohtml"))))
+
+	router.Get("/signup", usersC.New)
+	router.Post("/users", usersC.Create)
+	router.Get("/signin", usersC.SignIn)
+	router.Post("/signin", usersC.ProcessSignIn)
+	router.Post("/signout", usersC.ProcessSignOut)
+	router.Get("/forgot-pw", usersC.ForgotPassword)
+	router.Post("/forgot-pw", usersC.ProcessForgotPassword)
+	router.Get("/reset-pw", usersC.ResetPassword)
+	router.Post("/reset-pw", usersC.ProcessResetPassword)
+	// router.Get("/users/me", usersC.CurrentUser)
+	router.Route("/users/me", func(router chi.Router) {
+		router.Use(umw.RequireUser)
+		router.Get("/", usersC.CurrentUser)
+	})
+	// router.Get("/galleries/new", galleriesC.New)
+	router.Route("/galleries", func(router chi.Router) {
+		router.Get("/{id}", galleriesC.Show)
+		router.Get("/{id}/images/{filename}", galleriesC.Image)
+		router.Group(func(router chi.Router) {
+			router.Use(umw.RequireUser)
+			router.Get("/", galleriesC.Index)
+			router.Get("/new", galleriesC.New)
+			router.Post("/", galleriesC.Create)
+			router.Get("/{id}/edit", galleriesC.Edit)
+			router.Post("/{id}", galleriesC.Update)
+			router.Post("/{id}/delete", galleriesC.Delete)
+			router.Post("/{id}/images", galleriesC.UploadImage)
+			router.Post("/{id}/images/{filename}/delete", galleriesC.DeleteImage)
+		})
+
+	})
+	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Page Not Found", http.StatusNotFound)
+	})
+
+	fmt.Printf("Starting the server %s...", cfg.Server.Address)
+	// router будет обрабатывать все cookie, используя Middleware
+	err = http.ListenAndServe(cfg.Server.Address, router)
+	if err != nil {
+		panic(err)
+	}
+
+}
+
+// func TimeMiddleware(h http.HandlerFunc) http.HandlerFunc {
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		start := time.Now()
+// 		h(w, r)
+// 		fmt.Println("Request time:", time.Since(start))
+// 	}
+// }
